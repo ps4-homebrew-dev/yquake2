@@ -1,0 +1,224 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?John=20T=C3=B6rnblom?= <john.tornblom@gmail.com>
+Date: Mon, 16 Nov 2026 10:59:29 +0000
+Subject: [PATCH 3/6] Add a PS4 (Orbis) build
+
+A build with the ps4-homebrew-dev SDK (ORBIS, __ORBIS__) makes the
+programs of a PS4 package: stuff/cmake/modules/PS4.cmake. The PS4 build
+script converts them and makes the package, which is laid out like any
+Yamagi Quake II installation, in /app0: the client (eboot.bin), the
+renderers next to it, and baseq2/ with the game and the game data.
+
+The client is SDL_main(): SDL2main (from pkg-config's SDL2 libraries) has
+main(), and sets the XDG base directories up in the title's download data
+(/download0, 512 MiB), where the config and the savegames are, in
+/download0/.data/YamagiQ2. Mesa's shader cache is there too, and is held
+to 128 MiB. The game runs as whichever user the system starts it as.
+
+The SDK's libraries are static. Only the client links SDL2, with
+-rdynamic; the renderers and the game are shared objects, converted with
+orbis-elf2self --main to use the client's SDL2 and C library. So the
+renderers do not link SDL2, and may have undefined symbols. A shared
+object converted that way gets the client's symbol for any that it exports
+itself, and the PS4's compiler exports every symbol by default, whatever
+-fvisibility says: the renderers and the game would share the client's
+Com_Printf(), hunk and more. -fno-visibility-from-dllstorageclass makes
+-fvisibility=hidden work as on other systems.
+
+The client's folder is SDL_GetBasePath(): the kernel's path of the
+executable need not be one that the game sees.
+
+Graphics are Mesa's (zink on RADV): OpenGL 3.2 for the GL3 renderer and
+OpenGL ES 3 for the GLES3 one, both through EGL.
+
+The hunk is not asked to be aligned for superpages (MAP_ALIGNED_SUPER):
+it is an optimization only, and the PS4's kernel is not known to take the
+flag.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01EVpxQnEDpmH9ifdSUZDpqm
+---
+ CMakeLists.txt                  | 22 +++++++++++++++++++++-
+ src/backends/generic/misc.c     | 14 ++++++++++++++
+ src/backends/unix/main.c        | 14 +++++++++++++-
+ src/backends/unix/shared/hunk.c |  4 +++-
+ stuff/cmake/modules/PS4.cmake   | 30 ++++++++++++++++++++++++++++++
+ 5 files changed, 81 insertions(+), 3 deletions(-)
+ create mode 100644 stuff/cmake/modules/PS4.cmake
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 777107ab..212c15e5 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -47,6 +47,14 @@ else() # GCC/clang/mingw
+ #  -fvisibility=hidden	-> Force defaultsymbol visibility to hidden
+ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fno-strict-aliasing -fwrapv -fvisibility=hidden")
+ 
++# The PS4's compiler gives symbols the visibility of their DLL storage class,
++# which is the default one for those that have none, whatever -fvisibility
++# says. The renderers and the game must not export the functions and
++# variables that the client has too: they would get the client's.
++if(ORBIS)
++	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-visibility-from-dllstorageclass")
++endif()
++
+ # Use -O2 as maximum optimization level. -O3 has it's problems with yquake2.
+ string(REPLACE "-O3" "-O2" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
+ endif() # MSVC'S else-case
+@@ -189,6 +197,12 @@ endif()
+ if (SDL3_SUPPORT)
+ 	find_package(SDL3 REQUIRED)
+ 	add_definitions(-DUSE_SDL3)
++elseif(ORBIS)
++	# The PS4 homebrew SDK's SDL2 is a static library, which only the
++	# executable links: the renderers use the executable's (see
++	# stuff/cmake/modules/PS4.cmake). pkg-config gives its dependencies.
++	find_package(PkgConfig REQUIRED)
++	pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+ else()
+ 	find_package(SDL2 REQUIRED)
+ 	list(APPEND yquake2IncludeDirectories "${SDL2_INCLUDE_DIR}/..")
+@@ -278,7 +292,8 @@ else()
+ 	endif()
+ endif()
+ 
+-if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin" AND NOT ${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD" AND NOT WIN32)
++# (On the PS4, the renderers' SDL2 is the executable's, undefined in them.)
++if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin" AND NOT ${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD" AND NOT WIN32 AND NOT ORBIS)
+ 	list(APPEND yquake2LinkerFlags "-Wl,--no-undefined")
+ endif()
+ 
+@@ -896,3 +911,8 @@ if(SDL3_SUPPORT)
+ endif()
+ 
+ endif()
++
++# The PS4 build
++if(ORBIS)
++	include(PS4)
++endif()
+diff --git a/src/backends/generic/misc.c b/src/backends/generic/misc.c
+index d9acea5a..1352f330 100644
+--- a/src/backends/generic/misc.c
++++ b/src/backends/generic/misc.c
+@@ -50,6 +50,10 @@
+ #include <FindDirectory.h>
+ #endif
+ 
++#if defined(__ORBIS__) && !defined(DEDICATED_ONLY)
++#include <SDL2/SDL.h> // SDL_GetBasePath()
++#endif
++
+ #ifndef PATH_MAX
+ // this is mostly for windows. windows has a MAX_PATH = 260 #define, but allows
+ // longer paths anyway.. this might not be the maximum allowed length, but is
+@@ -74,6 +78,16 @@ static void SetExecutablePath(char* exePath)
+ 		exePath[0] = '\0';
+ 	}
+ 
++#elif defined(__ORBIS__) && !defined(DEDICATED_ONLY)
++
++	// On the PS4, the kernel's path of the executable need not be
++	// one that the game sees. SDL knows the folder: a package's
++	// /app0/, or the one an ELF was started from. Only the folder
++	// is used, whatever the executable's name is.
++	char *basePath = SDL_GetBasePath();
++	snprintf(exePath, PATH_MAX, "%seboot.bin", basePath ? basePath : "/app0/");
++	SDL_free(basePath);
++
+ #elif defined(__linux) || defined(__sun)
+ 
+ 	// all the platforms that have /proc/$pid/exe or similar that symlink the
+diff --git a/src/backends/unix/main.c b/src/backends/unix/main.c
+index 2bbf07da..5a6690df 100644
+--- a/src/backends/unix/main.c
++++ b/src/backends/unix/main.c
+@@ -36,6 +36,12 @@
+ 
+ #include "../../common/header/common.h"
+ 
++#if defined(__ORBIS__) && !defined(DEDICATED_ONLY)
++// On the PS4, SDL2main has the program's main(), and this
++// one is SDL_main(): it sets up where the files are written.
++#include <SDL2/SDL_main.h>
++#endif
++
+ void registerHandler(void);
+ void setCustomCfgDir(const char* dir);
+ 
+@@ -111,7 +117,7 @@ main(int argc, char **argv)
+ 		}
+ 	}
+ 
+-#ifndef __HAIKU__
++#if !defined(__HAIKU__) && !defined(__ORBIS__)
+ 	/* Prevent running Quake II as root. Only very mad
+ 	   minded or stupid people even think about it. :) */
+ 	if (getuid() == 0)
+@@ -138,6 +144,12 @@ main(int argc, char **argv)
+ 	// enforce C locale
+ 	setenv("LC_ALL", "C", 1);
+ 
++#ifdef __ORBIS__
++	// Mesa's shader cache is in the title's download data, with the
++	// config and the savegames, and may grow to 1 GiB by default.
++	setenv("MESA_SHADER_CACHE_MAX_SIZE", "128M", 0);
++#endif
++
+ 	/// Do not delay reads on stdin
+ 	if (fcntl(fileno(stdin), F_SETFL, fcntl(fileno(stdin), F_GETFL, NULL) | FNDELAY))
+ 	{
+diff --git a/src/backends/unix/shared/hunk.c b/src/backends/unix/shared/hunk.c
+index eebb49ca..baf4bc95 100644
+--- a/src/backends/unix/shared/hunk.c
++++ b/src/backends/unix/shared/hunk.c
+@@ -61,7 +61,9 @@ Hunk_Begin(int maxsize)
+ 	int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+ 	int prot = PROT_READ | PROT_WRITE;
+ 
+-#if defined(MAP_ALIGNED_SUPER)
++	/* (Not on the PS4: its kernel is not known to take the flag,
++	   which is an optimization only.) */
++#if defined(MAP_ALIGNED_SUPER) && !defined(__ORBIS__)
+ 	const size_t hgpagesize = 1UL<<21;
+ 	size_t page_size = sysconf(_SC_PAGESIZE);
+ 
+diff --git a/stuff/cmake/modules/PS4.cmake b/stuff/cmake/modules/PS4.cmake
+new file mode 100644
+index 00000000..0040d1f2
+--- /dev/null
++++ b/stuff/cmake/modules/PS4.cmake
+@@ -0,0 +1,30 @@
++# The PS4 build, with the ps4-homebrew-dev SDK (https://github.com/ps4-homebrew-dev/sdk).
++#
++# SDL2main (in pkg-config's SDL2 libraries) gives the PS4's main(): it sets
++# the XDG base directories up in the title's download data (/download0),
++# where the config and the savegames are, and goes back to the home screen
++# when the game exits.
++#
++# The SDK's libraries are static, and the client is the only one to link
++# SDL2 and the C library's static part: it is linked with -rdynamic, and
++# the renderers and the game, which are shared objects, are converted with
++# orbis-elf2self --main, to use the client's. They get the client's symbol
++# for any that they export too, so they are built to export what Yamagi
++# Quake II means them to and no more (-fno-visibility-from-dllstorageclass,
++# in CMakeLists.txt).
++#
++# This builds the programs. The PS4 build script converts them and makes
++# the package, which is laid out like a Yamagi Quake II installation.
++
++target_link_libraries(quake2 PkgConfig::SDL2)
++
++# The dedicated server is of no use in a package.
++set_target_properties(q2ded PROPERTIES EXCLUDE_FROM_ALL TRUE)
++
++# SDL2 is undefined in a renderer: orbis-elf2self finds it in the client,
++# and fails for a symbol that nothing defines.
++foreach(module ref_gl1 ref_gl3 ref_gles1 ref_gles3 ref_soft)
++	if(TARGET ${module})
++		target_link_options(${module} PRIVATE -Wl,--unresolved-symbols=ignore-all)
++	endif()
++endforeach()
+-- 
+2.43.0
+

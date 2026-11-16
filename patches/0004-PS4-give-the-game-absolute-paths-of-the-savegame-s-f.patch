@@ -1,0 +1,104 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?John=20T=C3=B6rnblom?= <john.tornblom@gmail.com>
+Date: Mon, 16 Nov 2026 09:51:28 +0000
+Subject: [PATCH 4/6] PS4: give the game absolute paths of the savegame's files
+
+The server changes to the savegame's folder and has the game read and
+write "game.ssv" and the levels there by name. On the PS4, in the
+application's sandbox, a file is not found by a path relative to the
+working directory, and getcwd() does not give that directory either:
+starting a game failed with "WriteGame: Couldn't open game.ssv". The game
+gets the files' absolute paths there.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01EVpxQnEDpmH9ifdSUZDpqm
+---
+ src/server/sv_save.c | 30 ++++++++++++++++++++++++++----
+ 1 file changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/src/server/sv_save.c b/src/server/sv_save.c
+index 71323554..234ca8e2 100644
+--- a/src/server/sv_save.c
++++ b/src/server/sv_save.c
+@@ -31,6 +31,22 @@ void CM_ReadPortalState(fileHandle_t f);
+ /*
+  * Delete save/<XXX>/
+  */
++/*
++ * The name the game is given for a file of the current
++ * savegame: relative to the working directory, which is
++ * the savegame's folder then. On the PS4, a file is not
++ * found by a relative path, and the name is absolute.
++ */
++static void
++SV_SaveFileName(char *name, size_t size, const char *file)
++{
++#ifdef __ORBIS__
++	Com_sprintf(name, size, "%s/save/current/%s", FS_Gamedir(), file);
++#else
++	Q_strlcpy(name, file, size);
++#endif
++}
++
+ void
+ SV_WipeSavegame(char *savename)
+ {
+@@ -163,6 +179,7 @@ SV_WriteLevelFile(void)
+ {
+ 	char name[MAX_OSPATH];
+ 	char workdir[MAX_OSPATH];
++	char file[MAX_QPATH + 8];
+ 	FILE *f;
+ 
+ 	Com_DPrintf("SV_WriteLevelFile()\n");
+@@ -192,7 +209,8 @@ SV_WriteLevelFile(void)
+ 		return;
+ 	}
+ 
+-	Com_sprintf(name, sizeof(name), "%s.sav", sv.name);
++	Com_sprintf(file, sizeof(file), "%s.sav", sv.name);
++	SV_SaveFileName(name, sizeof(name), file);
+ 	ge->WriteLevel(name);
+ 
+ 	Sys_SetWorkDir(workdir);
+@@ -221,6 +239,7 @@ SV_ReadLevelFile(void)
+ {
+ 	char name[MAX_OSPATH];
+ 	char workdir[MAX_OSPATH];
++	char file[MAX_QPATH + 8];
+ 	fileHandle_t f;
+ 
+ 	Com_DPrintf("SV_ReadLevelFile()\n");
+@@ -248,7 +267,8 @@ SV_ReadLevelFile(void)
+ 		return;
+ 	}
+ 
+-	Com_sprintf(name, sizeof(name), "%s.sav", sv.name);
++	Com_sprintf(file, sizeof(file), "%s.sav", sv.name);
++	SV_SaveFileName(name, sizeof(name), file);
+ 	ge->ReadLevel(name);
+ 
+ 	Sys_SetWorkDir(workdir);
+@@ -340,7 +360,8 @@ SV_WriteServerFile(qboolean autosave)
+ 		return;
+ 	}
+ 
+-	ge->WriteGame("game.ssv", autosave);
++	SV_SaveFileName(name, sizeof(name), "game.ssv");
++	ge->WriteGame(name, autosave);
+ 
+ 	Sys_SetWorkDir(workdir);
+ }
+@@ -405,7 +426,8 @@ SV_ReadServerFile(void)
+ 		return;
+ 	}
+ 
+-	ge->ReadGame("game.ssv");
++	SV_SaveFileName(name, sizeof(name), "game.ssv");
++	ge->ReadGame(name);
+ 
+ 	Sys_SetWorkDir(workdir);
+ }
+-- 
+2.43.0
+

@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?John=20T=C3=B6rnblom?= <john.tornblom@gmail.com>
+Date: Mon, 16 Nov 2026 09:19:58 +0000
+Subject: [PATCH 1/6] CMake: no backtrace without <execinfo.h>
+
+The signal handler includes <execinfo.h> when HAVE_EXECINFO is defined,
+which the build defined whenever a backtrace() function was found. A libc
+may have the function but no header for it (the ps4-homebrew-dev SDK's
+does), and the build then failed. Look for the header first.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01EVpxQnEDpmH9ifdSUZDpqm
+---
+ CMakeLists.txt | 20 ++++++++++++--------
+ 1 file changed, 12 insertions(+), 8 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index b0b7503f..777107ab 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -212,17 +212,21 @@ endif()
+ # Some systems like Linux has it within the libc some like the BSD, Haiku ...
+ # into an external libexecinfo library
+ include(CheckFunctionExists)
++include(CheckIncludeFile)
+ include(CheckLibraryExists)
+-check_function_exists(backtrace HAVE_EXECINFO_SYS)
+-IF (NOT HAVE_EXECINFO_SYS)
+-	check_library_exists(execinfo backtrace "" HAVE_EXECINFO_LIB)
+-	if (HAVE_EXECINFO_LIB)
+-		list(APPEND yquake2ClientLinkerFlags execinfo)
+-		list(APPEND yquake2ServerLinkerFlags execinfo)
++check_include_file(execinfo.h HAVE_EXECINFO_H)
++if (HAVE_EXECINFO_H)
++	check_function_exists(backtrace HAVE_EXECINFO_SYS)
++	IF (NOT HAVE_EXECINFO_SYS)
++		check_library_exists(execinfo backtrace "" HAVE_EXECINFO_LIB)
++		if (HAVE_EXECINFO_LIB)
++			list(APPEND yquake2ClientLinkerFlags execinfo)
++			list(APPEND yquake2ServerLinkerFlags execinfo)
++			add_definitions(-DHAVE_EXECINFO)
++		endif()
++	else()
+ 		add_definitions(-DHAVE_EXECINFO)
+ 	endif()
+-else()
+-	add_definitions(-DHAVE_EXECINFO)
+ endif()
+ 
+ # cURL support.
+-- 
+2.43.0
+

@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?John=20T=C3=B6rnblom?= <john.tornblom@gmail.com>
+Date: Mon, 16 Nov 2026 10:59:29 +0000
+Subject: [PATCH 5/6] PS4: build the games of other repositories
+
+The mission packs' games (xatrix, rogue) are in repositories of their
+own. They are shared objects converted against the client, as the game
+is, so they are built with it: from the sources that the PS4 build script
+puts in games/<name>, as release/<name>/game.so.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01EVpxQnEDpmH9ifdSUZDpqm
+---
+ stuff/cmake/modules/PS4.cmake | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/stuff/cmake/modules/PS4.cmake b/stuff/cmake/modules/PS4.cmake
+index 0040d1f2..5d0c44d4 100644
+--- a/stuff/cmake/modules/PS4.cmake
++++ b/stuff/cmake/modules/PS4.cmake
+@@ -28,3 +28,21 @@ foreach(module ref_gl1 ref_gl3 ref_gles1 ref_gles3 ref_soft)
+ 		target_link_options(${module} PRIVATE -Wl,--unresolved-symbols=ignore-all)
+ 	endif()
+ endforeach()
++
++# The games of other Yamagi Quake II repositories, as the mission packs'
++# (xatrix, rogue): the PS4 build script puts each one's source in the source
++# directory's games/, in a folder with the name of the game's own.
++file(GLOB games RELATIVE ${PROJECT_SOURCE_DIR}/games ${PROJECT_SOURCE_DIR}/games/*)
++foreach(name ${games})
++	file(GLOB_RECURSE sources CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/games/${name}/src/*.c)
++	if(NOT sources)
++		continue()
++	endif()
++	add_library(game_${name} MODULE ${sources})
++	set_target_properties(game_${name} PROPERTIES
++		PREFIX ""
++		OUTPUT_NAME game
++		SUFFIX ${CMAKE_SHARED_LIBRARY_SUFFIX}
++		LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/release/${name})
++	target_link_libraries(game_${name} ${yquake2LinkerFlags})
++endforeach()
+-- 
+2.43.0
+

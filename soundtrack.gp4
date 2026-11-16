@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<psproject xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           fmt="gp4" version="1000">
+  <volume>
+    <volume_type>pkg_ps4_ac_data</volume_type>
+    <volume_id>PS4VOLUME</volume_id>
+    <volume_ts>2026-11-16T00:00:00</volume_ts>
+    <package content_id="IV0000-YQII00001_00-QUAKE2SOUNDTRACK"
+             passcode="00000000000000000000000000000000"
+             entitlement_key="00000000000000000000000000000000" />
+  </volume>
+  <files img_no="0">
+    <file targ_path="sce_sys/param.sfo" orig_path="sce_sys/soundtrack.sfo" />
+    <file targ_path="sce_sys/icon0.png" orig_path="sce_sys/icon0.png" />
+    <file targ_path="baseq2/music/02.ogg" orig_path="baseq2/music/02.ogg" />
+    <file targ_path="baseq2/music/03.ogg" orig_path="baseq2/music/03.ogg" />
+    <file targ_path="baseq2/music/04.ogg" orig_path="baseq2/music/04.ogg" />
+    <file targ_path="baseq2/music/05.ogg" orig_path="baseq2/music/05.ogg" />
+    <file targ_path="baseq2/music/06.ogg" orig_path="baseq2/music/06.ogg" />
+    <file targ_path="baseq2/music/07.ogg" orig_path="baseq2/music/07.ogg" />
+    <file targ_path="baseq2/music/08.ogg" orig_path="baseq2/music/08.ogg" />
+    <file targ_path="baseq2/music/09.ogg" orig_path="baseq2/music/09.ogg" />
+    <file targ_path="baseq2/music/10.ogg" orig_path="baseq2/music/10.ogg" />
+    <file targ_path="baseq2/music/11.ogg" orig_path="baseq2/music/11.ogg" />
+  </files>
+  <rootdir>
+    <dir targ_name="sce_sys" />
+    <dir targ_name="baseq2">
+      <dir targ_name="music" />
+    </dir>
+  </rootdir>
+</psproject>

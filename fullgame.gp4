@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<psproject xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           fmt="gp4" version="1000">
+  <volume>
+    <volume_type>pkg_ps4_ac_data</volume_type>
+    <volume_id>PS4VOLUME</volume_id>
+    <volume_ts>2026-11-16T00:00:00</volume_ts>
+    <package content_id="IV0000-YQII00001_00-QUAKE2FULLGAME00"
+             passcode="00000000000000000000000000000000"
+             entitlement_key="00000000000000000000000000000000" />
+  </volume>
+  <files img_no="0">
+    <file targ_path="sce_sys/param.sfo" orig_path="sce_sys/fullgame.sfo" />
+    <file targ_path="sce_sys/icon0.png" orig_path="sce_sys/icon0.png" />
+    <file targ_path="baseq2/pak0.pak" orig_path="baseq2/pak0.pak" />
+    <file targ_path="baseq2/pak1.pak" orig_path="baseq2/pak1.pak" />
+    <file targ_path="baseq2/pak2.pak" orig_path="baseq2/pak2.pak" />
+    <file targ_path="baseq2/video/end.cin" orig_path="baseq2/video/end.cin" />
+    <file targ_path="baseq2/video/eou1_.cin" orig_path="baseq2/video/eou1_.cin" />
+    <file targ_path="baseq2/video/eou2_.cin" orig_path="baseq2/video/eou2_.cin" />
+    <file targ_path="baseq2/video/eou3_.cin" orig_path="baseq2/video/eou3_.cin" />
+    <file targ_path="baseq2/video/eou4_.cin" orig_path="baseq2/video/eou4_.cin" />
+    <file targ_path="baseq2/video/eou5_.cin" orig_path="baseq2/video/eou5_.cin" />
+    <file targ_path="baseq2/video/eou6_.cin" orig_path="baseq2/video/eou6_.cin" />
+    <file targ_path="baseq2/video/eou7_.cin" orig_path="baseq2/video/eou7_.cin" />
+    <file targ_path="baseq2/video/eou8_.cin" orig_path="baseq2/video/eou8_.cin" />
+    <file targ_path="baseq2/video/idlog.cin" orig_path="baseq2/video/idlog.cin" />
+    <file targ_path="baseq2/video/ntro.cin" orig_path="baseq2/video/ntro.cin" />
+  </files>
+  <rootdir>
+    <dir targ_name="sce_sys" />
+    <dir targ_name="baseq2">
+      <dir targ_name="pak0.pak" />
+      <dir targ_name="pak1.pak" />
+      <dir targ_name="pak2.pak" />
+      <dir targ_name="video" />
+    </dir>
+  </rootdir>
+</psproject>

@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?John=20T=C3=B6rnblom?= <john.tornblom@gmail.com>
+Date: Mon, 16 Nov 2026 09:20:13 +0000
+Subject: [PATCH 2/6] Use $XDG_DATA_HOME when $HOME is not set
+
+Without $HOME there was no home directory at all, and so nowhere to write
+the config and the savegames to, even when $XDG_DATA_HOME says where they
+belong. That is the case on the PS4, where SDL sets the XDG base
+directories up in the title's download data, and nothing sets $HOME.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01EVpxQnEDpmH9ifdSUZDpqm
+---
+ src/backends/unix/system.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/src/backends/unix/system.c b/src/backends/unix/system.c
+index afb0e32f..cc26aa78 100644
+--- a/src/backends/unix/system.c
++++ b/src/backends/unix/system.c
+@@ -565,6 +565,17 @@ Sys_GetHomeDir()
+ 		const char* home = getenv("HOME");
+ 
+ 		if (!home) {
++#if defined(USE_XDG) && !defined(__HAIKU__)
++			// no home dir, but there may be an XDG
++			// dir: XDG_DATA_HOME/{cfgdir}
++			const char* xdgdatahome = getenv("XDG_DATA_HOME");
++
++			if (xdgdatahome) {
++				Com_sprintf(dir, MAX_OSPATH, "%s/%s/", xdgdatahome, cfgdir);
++				Sys_Mkdir(dir);
++				return dir;
++			}
++#endif
+ 			// uh-oh
+ 			return NULL;
+ 		}
+-- 
+2.43.0
+

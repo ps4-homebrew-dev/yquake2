@@ -1,0 +1,4 @@
+*.pkg
+/sce_sys/*.sfo
+/baseq2/*
+!/baseq2/config.cfg

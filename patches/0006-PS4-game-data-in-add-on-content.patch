@@ -1,0 +1,169 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?John=20T=C3=B6rnblom?= <john.tornblom@gmail.com>
+Date: Mon, 16 Nov 2026 10:09:01 +0000
+Subject: [PATCH 6/6] PS4: game data in add-on content
+
+The add-on content installed for the title (packages of category "ac"
+with its title id) is mounted when the filesystem is set up, as
+/addcont0, /addcont1 and so on, and each one's folder is a data
+directory, like the one given with -datadir: baseq2/pak0.pak,
+baseq2/music/02.ogg, xatrix/pak0.pak. They come after the home directory
+and before the client's folder, so the full game's pak0.pak in an add-on
+is found before the demo's in the package.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01EVpxQnEDpmH9ifdSUZDpqm
+---
+ src/backends/unix/system.c | 89 ++++++++++++++++++++++++++++++++++++++
+ src/common/filesystem.c    | 18 ++++++++
+ src/common/header/common.h |  5 +++
+ 3 files changed, 112 insertions(+)
+
+diff --git a/src/backends/unix/system.c b/src/backends/unix/system.c
+index cc26aa78..d28e83b3 100644
+--- a/src/backends/unix/system.c
++++ b/src/backends/unix/system.c
+@@ -616,6 +616,95 @@ Sys_GetHomeDir()
+ 	return dir;
+ }
+ 
++#ifdef __ORBIS__
++/* libSceSysmodule and libSceAppContent: the title's add-on
++   content (the packages of category "ac" with its title id),
++   which the system mounts as /addcont0, /addcont1 and so on. */
++#define PS4_SYSMODULE_APP_CONTENT 0x00b4
++#define PS4_ADDCONT_MAX 64
++
++typedef struct
++{
++	char data[17];
++	char padding[3];
++} ps4_entitlement_label_t;
++
++typedef struct
++{
++	ps4_entitlement_label_t label;
++	unsigned int status;
++} ps4_addcont_info_t;
++
++typedef struct
++{
++	char data[16];
++} ps4_mount_point_t;
++
++int sceSysmoduleLoadModule(unsigned short id);
++int sceAppContentInitialize(const void *init, void *boot);
++int sceAppContentGetAddcontInfoList(unsigned int service_label,
++		ps4_addcont_info_t *list, unsigned int size, unsigned int *count);
++int sceAppContentAddcontMount(unsigned int service_label,
++		const ps4_entitlement_label_t *label, ps4_mount_point_t *mount_point);
++
++const char *
++Sys_GetAddcontDir(int index)
++{
++	static ps4_mount_point_t dirs[PS4_ADDCONT_MAX];
++	static int numdirs = -1;
++
++	if (numdirs < 0)
++	{
++		static ps4_addcont_info_t list[PS4_ADDCONT_MAX];
++		unsigned char init[32] = {0};
++		unsigned char boot[40] = {0};
++		unsigned int count = 0;
++		int err;
++
++		numdirs = 0;
++
++		/* SDL may have done both already, which is no error to us. */
++		sceSysmoduleLoadModule(PS4_SYSMODULE_APP_CONTENT);
++		sceAppContentInitialize(init, boot);
++
++		err = sceAppContentGetAddcontInfoList(0, list, PS4_ADDCONT_MAX, &count);
++
++		if (err < 0)
++		{
++			Com_Printf("Couldn't list the add-on content: 0x%08x\n", (unsigned)err);
++			count = 0;
++		}
++
++		for (unsigned int i = 0; (i < count) && (i < PS4_ADDCONT_MAX); i++)
++		{
++			ps4_mount_point_t *dir = &dirs[numdirs];
++
++			memset(dir, 0, sizeof(*dir));
++			list[i].label.data[sizeof(list[i].label.data) - 1] = '\0';
++			err = sceAppContentAddcontMount(0, &list[i].label, dir);
++
++			if ((err < 0) || (dir->data[0] == '\0'))
++			{
++				Com_Printf("Couldn't mount add-on content %s (status %u): 0x%08x\n",
++						list[i].label.data, list[i].status, (unsigned)err);
++				continue;
++			}
++
++			dir->data[sizeof(dir->data) - 1] = '\0';
++			Com_Printf("Add-on content %s is %s\n", list[i].label.data, dir->data);
++			numdirs++;
++		}
++	}
++
++	if ((index < 0) || (index >= numdirs))
++	{
++		return NULL;
++	}
++
++	return dirs[index].data;
++}
++#endif
++
+ void
+ Sys_Remove(const char *path)
+ {
+diff --git a/src/common/filesystem.c b/src/common/filesystem.c
+index 133d5fae..1cc28f66 100644
+--- a/src/common/filesystem.c
++++ b/src/common/filesystem.c
+@@ -2209,6 +2209,24 @@ FS_BuildRawPath(void)
+ 		}
+ 	}
+ 
++#ifdef __ORBIS__
++	// On the PS4, add the folders of the add-on content
++	// that is installed, which are data dirs: the full
++	// game's, the soundtrack's. They come before the
++	// binary dir, which has the demo's game data.
++	for (int i = 0; ; i++)
++	{
++		const char *addcontdir = Sys_GetAddcontDir(i);
++
++		if (addcontdir == NULL)
++		{
++			break;
++		}
++
++		FS_AddDirToRawPath(addcontdir, false, false);
++	}
++#endif
++
+ 	// Add binary dir. Required, because the renderer
+ 	// libraries are loaded from it.
+ 	const char *binarydir = Sys_GetBinaryDir();
+diff --git a/src/common/header/common.h b/src/common/header/common.h
+index 6a6f2cd2..df1e7b90 100644
+--- a/src/common/header/common.h
++++ b/src/common/header/common.h
+@@ -846,6 +846,11 @@ YQ2_ATTR_NORETURN void Sys_Error(const char *error, ...);
+ YQ2_ATTR_NORETURN void Sys_Quit(void);
+ void Sys_Init(void);
+ char *Sys_GetHomeDir(void);
++#ifdef __ORBIS__
++/* The folder of the PS4's add-on content number index, mounted
++   on first use, or NULL when there are no more. */
++const char *Sys_GetAddcontDir(int index);
++#endif
+ void Sys_Remove(const char *path);
+ int Sys_Rename(const char *from, const char *to);
+ void Sys_RemoveDir(const char *path);
+-- 
+2.43.0
+
