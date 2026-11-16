@@ -1,0 +1,100 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?John=20T=C3=B6rnblom?= <john.tornblom@gmail.com>
+Date: Mon, 16 Nov 2026 22:15:00 +0000
+Subject: [PATCH 7/7] PS4: do not ask the kernel for the working directory
+
+The game resolves its search paths with realpath(), which (for a
+relative path) calls getcwd(), which is the kernel's __getcwd,
+syscall 326. The PS4's kernel has that syscall; the PS5's kernel, on
+which a PS4 title runs, does not: its system call table has no slot
+326, and a call to an absent slot kills the process with SIGSYS. The
+game data's folder is "." by default, so the game died there, at
+startup, before any window: signal 12 in libkernel's system call
+stub, rdi the 1 KiB buffer of realpath(), rsi PATH_MAX.
+
+The PS4 cannot rely on the working directory anyway (see 0004: a file
+is not found by a relative path in the application's sandbox), so the
+game data's folder is the client's folder, and the savegame's files
+have absolute names. That leaves getcwd() no work to do: the default
+game data folder is the client's folder, a relative path is resolved
+against the client's folder instead of the working directory, and the
+working directory is neither read nor changed.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01EVpxQnEDpmH9ifdSUZDpqm
+---
+ src/backends/unix/system.c | 24 ++++++++++++++++++++++++
+ src/common/filesystem.c    |  8 ++++++++
+ 2 files changed, 32 insertions(+)
+
+diff --git a/src/backends/unix/system.c b/src/backends/unix/system.c
+index d28e83b..0085dbf 100644
+--- a/src/backends/unix/system.c
++++ b/src/backends/unix/system.c
+@@ -748,6 +748,16 @@ Sys_RemoveDir(const char *path)
+ qboolean
+ Sys_Realpath(const char *in, char *out, size_t size)
+ {
++#ifdef __ORBIS__
++	// realpath() calls getcwd() for a relative path, and the PS5's kernel
++	// has no __getcwd: the process dies with SIGSYS. Nothing here is a
++	// symlink, so a relative path is resolved against the client's folder.
++	if (in[0] != '/')
++	{
++		snprintf(out, size, "%s%s", Sys_GetBinaryDir(), in);
++		return true;
++	}
++#endif
+ 	char *converted = realpath(in, NULL);
+
+ 	if (converted == NULL)
+@@ -840,6 +850,14 @@ Sys_LoadLibrary(const char *path, const char *sym, void **handle)
+ void
+ Sys_GetWorkDir(char *buffer, size_t len)
+ {
++#ifdef __ORBIS__
++	// getcwd() is syscall 326, and the PS5's kernel has no such slot:
++	// the process dies with SIGSYS. Nothing reads the working directory
++	// there: the savegame's files have absolute names (see 0004), and
++	// the working directory is not changed either.
++	buffer[0] = '\0';
++	return;
++#endif
+ 	if (getcwd(buffer, len) != 0)
+ 	{
+ 		return;
+@@ -851,6 +869,12 @@ Sys_GetWorkDir(char *buffer, size_t len)
+ qboolean
+ Sys_SetWorkDir(char *path)
+ {
++#ifdef __ORBIS__
++	// A file is not found by a path relative to the working directory in
++	// the application's sandbox (see 0004), so the working directory is
++	// left where it is.
++	return true;
++#endif
+ 	if (chdir(path) == 0)
+ 	{
+ 		return true;
+diff --git a/src/common/filesystem.c b/src/common/filesystem.c
+index 1cc28f6..c4fd077 100644
+--- a/src/common/filesystem.c
++++ b/src/common/filesystem.c
+@@ -2281,7 +2281,15 @@ FS_InitFilesystem(void)
+ 	}
+ 	else if (strlen(datadir) == 0)
+ 	{
++#ifdef __ORBIS__
++		// realpath() calls getcwd() for a relative path, and the PS5's
++		// kernel has no __getcwd (syscall 326): the process dies with
++		// SIGSYS. The game data sits next to the client in the package,
++		// so the client's folder is the game data's folder.
++		Q_strlcpy(datadir, Sys_GetBinaryDir(), sizeof(datadir));
++#else
+ 		strcpy(datadir, ".");
++#endif
+ 	}
+
+ #ifdef _WIN32
+--
+2.43.0
